@@ -27,84 +27,30 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
   };
 }
 
-function createShimClient() {
-  // Minimal shim that mirrors the supabase client surface used by the app.
-  // This allows the app to load and show a friendly error state when envs are missing
-  // without throwing during import/initialization.
-  const builder: any = {
-    _table: null,
-    auth: {
-      async getSession() {
-        return { data: { session: null } };
-      },
-    },
-    from(table: string) {
-      builder._table = table;
-      return builder;
-    },
-    select: async (..._args: any[]) => ({ data: [], error: null }),
-    maybeSingle: async () => ({ data: null, error: null }),
-    eq: function () {
-      return this;
-    },
-    upsert: async (..._args: any[]) => ({ data: null, error: null }),
-    channel: (_name: string) => ({
-      on: function () {
-        return this;
-      },
-      subscribe: async () => ({ id: 'shim-channel' }),
-    }),
-    removeChannel: async (_channel: any) => undefined,
-  };
-  return builder as unknown as ReturnType<typeof createClient>;
+// Browser config comes from the VITE_* variables (inlined at build time).
+// The non-prefixed variables are the SSR-only fallback used on the server.
+const SUPABASE_URL =
+  import.meta.env['VITE_SUPABASE_URL'] || process.env['SUPABASE_URL'];
+const SUPABASE_PUBLISHABLE_KEY =
+  import.meta.env['VITE_SUPABASE_PUBLISHABLE_KEY'] || process.env['SUPABASE_PUBLISHABLE_KEY'];
+
+if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  const missing = [
+    ...(!SUPABASE_URL ? ['VITE_SUPABASE_URL'] : []),
+    ...(!SUPABASE_PUBLISHABLE_KEY ? ['VITE_SUPABASE_PUBLISHABLE_KEY'] : []),
+  ];
+  throw new Error(`Missing Supabase environment variable(s): ${missing.join(', ')}`);
 }
-
-function createSupabaseClient() {
-  // Use import.meta.env for client-side (Vite build-time replacement)
-  // Also accept NEXT_PUBLIC_* variables provided by Vercel's integration so we
-  // don't require VITE_* variables to be present. Fall back to process.env for SSR.
-  const SUPABASE_URL =
-    import.meta.env['VITE_SUPABASE_URL'] ||
-    import.meta.env['NEXT_PUBLIC_SUPABASE_URL'] ||
-    process.env['NEXT_PUBLIC_SUPABASE_URL'] ||
-    process.env['SUPABASE_URL'];
-  const SUPABASE_PUBLISHABLE_KEY =
-    import.meta.env['VITE_SUPABASE_PUBLISHABLE_KEY'] ||
-    import.meta.env['NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY'] ||
-    process.env['NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY'] ||
-    process.env['SUPABASE_PUBLISHABLE_KEY'];
-
-  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-    const missing = [
-      ...(!SUPABASE_URL ? ['SUPABASE_URL (NEXT_PUBLIC_SUPABASE_URL or VITE_SUPABASE_URL)'] : []),
-      ...(!SUPABASE_PUBLISHABLE_KEY ? ['SUPABASE_PUBLISHABLE_KEY (NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_PUBLISHABLE_KEY)'] : []),
-    ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Tolig will run in offline mode.`;
-    // Log a helpful message but do NOT throw. Throwing here causes the client bundle to crash during initial render.
-    // Instead, return a shim client that provides safe no-op responses and allows the UI to render a friendly error.
-    console.error(`[Supabase] ${message}`);
-    return createShimClient();
-  }
-
-  return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-    global: {
-      fetch: createSupabaseFetch(SUPABASE_PUBLISHABLE_KEY),
-    },
-    auth: {
-      storage: brokeredPreviewStorage(),
-      persistSession: true,
-      autoRefreshToken: true,
-    }
-  });
-}
-
-let _supabase: ReturnType<typeof createSupabaseClient> | undefined;
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
-export const supabase = new Proxy({} as ReturnType<typeof createSupabaseClient>, {
-  get(_, prop, receiver) {
-    if (!_supabase) _supabase = createSupabaseClient();
-    return Reflect.get(_supabase as any, prop, receiver);
+export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  global: {
+    fetch: createSupabaseFetch(SUPABASE_PUBLISHABLE_KEY),
+  },
+  auth: {
+    storage: brokeredPreviewStorage(),
+    persistSession: true,
+    autoRefreshToken: true,
   },
 });
