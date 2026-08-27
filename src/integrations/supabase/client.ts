@@ -61,14 +61,23 @@ function createShimClient() {
 
 function createSupabaseClient() {
   // Use import.meta.env for client-side (Vite build-time replacement)
-  // Fall back to process.env for SSR (server-side rendering)
-  const SUPABASE_URL = import.meta.env['VITE_SUPABASE_URL'] || process.env['SUPABASE_URL'];
-  const SUPABASE_PUBLISHABLE_KEY = import.meta.env['VITE_SUPABASE_PUBLISHABLE_KEY'] || process.env['SUPABASE_PUBLISHABLE_KEY'];
+  // Also accept NEXT_PUBLIC_* variables provided by Vercel's integration so we
+  // don't require VITE_* variables to be present. Fall back to process.env for SSR.
+  const SUPABASE_URL =
+    import.meta.env['VITE_SUPABASE_URL'] ||
+    import.meta.env['NEXT_PUBLIC_SUPABASE_URL'] ||
+    process.env['NEXT_PUBLIC_SUPABASE_URL'] ||
+    process.env['SUPABASE_URL'];
+  const SUPABASE_PUBLISHABLE_KEY =
+    import.meta.env['VITE_SUPABASE_PUBLISHABLE_KEY'] ||
+    import.meta.env['NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY'] ||
+    process.env['NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY'] ||
+    process.env['SUPABASE_PUBLISHABLE_KEY'];
 
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
     const missing = [
-      ...(!SUPABASE_URL ? ['VITE_SUPABASE_URL or SUPABASE_URL'] : []),
-      ...(!SUPABASE_PUBLISHABLE_KEY ? ['VITE_SUPABASE_PUBLISHABLE_KEY or SUPABASE_PUBLISHABLE_KEY'] : []),
+      ...(!SUPABASE_URL ? ['SUPABASE_URL (NEXT_PUBLIC_SUPABASE_URL or VITE_SUPABASE_URL)'] : []),
+      ...(!SUPABASE_PUBLISHABLE_KEY ? ['SUPABASE_PUBLISHABLE_KEY (NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_PUBLISHABLE_KEY)'] : []),
     ];
     const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Tolig will run in offline mode.`;
     // Log a helpful message but do NOT throw. Throwing here causes the client bundle to crash during initial render.
