@@ -27,6 +27,37 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
   };
 }
 
+function createShimClient() {
+  // Minimal shim that mirrors the supabase client surface used by the app.
+  // This allows the app to load and show a friendly error state when envs are missing
+  // without throwing during import/initialization.
+  const builder: any = {
+    _table: null,
+    auth: {
+      async getSession() {
+        return { data: { session: null } };
+      },
+    },
+    from(table: string) {
+      builder._table = table;
+      return builder;
+    },
+    select: async (..._args: any[]) => ({ data: [], error: null }),
+    maybeSingle: async () => ({ data: null, error: null }),
+    eq: function () {
+      return this;
+    },
+    upsert: async (..._args: any[]) => ({ data: null, error: null }),
+    channel: (_name: string) => ({
+      on: function () {
+        return this;
+      },
+      subscribe: async () => ({ id: 'shim-channel' }),
+    }),
+    removeChannel: async (_channel: any) => undefined,
+  };
+  return builder as unknown as ReturnType<typeof createClient>;
+}
 
 function createSupabaseClient() {
   // Use import.meta.env for client-side (Vite build-time replacement)
@@ -36,12 +67,14 @@ function createSupabaseClient() {
 
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
     const missing = [
-      ...(!SUPABASE_URL ? ['SUPABASE_URL'] : []),
-      ...(!SUPABASE_PUBLISHABLE_KEY ? ['SUPABASE_PUBLISHABLE_KEY'] : []),
+      ...(!SUPABASE_URL ? ['VITE_SUPABASE_URL or SUPABASE_URL'] : []),
+      ...(!SUPABASE_PUBLISHABLE_KEY ? ['VITE_SUPABASE_PUBLISHABLE_KEY or SUPABASE_PUBLISHABLE_KEY'] : []),
     ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Connect Supabase in Lovable Cloud.`;
+    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Tolig will run in offline mode.`;
+    // Log a helpful message but do NOT throw. Throwing here causes the client bundle to crash during initial render.
+    // Instead, return a shim client that provides safe no-op responses and allows the UI to render a friendly error.
     console.error(`[Supabase] ${message}`);
-    throw new Error(message);
+    return createShimClient();
   }
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
@@ -63,7 +96,6 @@ let _supabase: ReturnType<typeof createSupabaseClient> | undefined;
 export const supabase = new Proxy({} as ReturnType<typeof createSupabaseClient>, {
   get(_, prop, receiver) {
     if (!_supabase) _supabase = createSupabaseClient();
-    return Reflect.get(_supabase, prop, receiver);
+    return Reflect.get(_supabase as any, prop, receiver);
   },
 });
-
